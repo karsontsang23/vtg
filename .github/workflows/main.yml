@@ -1,0 +1,36 @@
+name: GIF Convert V4
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        required: true
+      job_id:
+        required: true
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - run: curl -L "${{ inputs.video_url }}" -o input.mp4
+
+      - run: |
+          ffmpeg -i input.mp4 \
+          -vf "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
+          output.gif
+
+      - name: Upload GIF somewhere public
+        run: |
+          echo "UPLOAD STEP HERE (R2 / GitHub release / cloud storage)"
+
+      - name: Notify Cloudflare Worker (webhook)
+        run: |
+          curl -X POST https://YOUR_WORKER.workers.dev/callback \
+          -H "Content-Type: application/json" \
+          -d '{
+            "job_id": "${{ inputs.job_id }}",
+            "gif_url": "https://YOUR_PUBLIC_URL/output.gif"
+          }'
