@@ -1,0 +1,28 @@
+
+name: GIF Convert V4
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        required: true
+      job_id:
+        required: true
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - run: curl -L "${{ inputs.video_url }}" -o input.mp4
+
+      - run: |
+          ffmpeg -i input.mp4 -vf "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" output.gif
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gif
+          path: output.gif
