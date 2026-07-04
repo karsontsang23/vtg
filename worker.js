@@ -7,7 +7,7 @@ export default {
       const { video_url } = await req.json();
       const jobId = crypto.randomUUID();
 
-      await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/gif.yml/dispatches", {
+      await fetch("https://api.github.com/repos/karsontsang23/vtg/actions/workflows/gif.yml/dispatches", {
         method: "POST",
         headers: {
           "Authorization": "Bearer YOUR_GITHUB_TOKEN",
