@@ -28,7 +28,7 @@ jobs:
 
       - name: Notify Cloudflare Worker (webhook)
         run: |
-          curl -X POST https://YOUR_WORKER.workers.dev/callback \
+          curl -X POST https://https://vtg-3fj.pages.dev/callback \
           -H "Content-Type: application/json" \
           -d '{
             "job_id": "${{ inputs.job_id }}",
