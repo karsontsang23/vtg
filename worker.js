@@ -1,8 +1,8 @@
-// 使用 Cloudflare KV 或 Durable Objects 是最佳做法，這裡先以全域 Map 作為記憶體快取（注意：生產環境建議綁定 KV）
 const db = new Map();
 
 export default {
-  async fetch(req) {
+  // 在 Cloudflare Workers 中，環境變數會作為 fetch 的第二個參數 env 傳入
+  async fetch(req, env) {
     const url = new URL(req.url);
 
     // ① iPhone 建立 Job
@@ -10,14 +10,14 @@ export default {
       const { video_url } = await req.json();
       const jobId = crypto.randomUUID();
       
-      // 初始化狀態
       db.set(jobId, { status: "processing", gif: null });
 
       // 觸發 GitHub Actions
       await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/gif.yml/dispatches", {
         method: "POST",
         headers: {
-          "Authorization": "Bearer YOUR_GITHUB_TOKEN",
+          // 💡 受影響代碼修改：改為從 env.GITHUB_TOKEN 讀取環境變數
+          "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
           "Accept": "application/vnd.github+json",
           "User-Agent": "Cloudflare-Worker"
         },
@@ -30,7 +30,7 @@ export default {
       return Response.json({ job_id: jobId });
     }
 
-    // ② GitHub Webhook Callback (補齊接收與寫入狀態)
+    // ② GitHub Webhook Callback
     if (url.pathname === "/callback") {
       const body = await req.json();
       const { job_id, gif_url } = body;
@@ -41,7 +41,7 @@ export default {
       return Response.json({ ok: true });
     }
 
-    // ③ iPhone 檢查結果 (補齊動態讀取真實狀態)
+    // ③ iPhone 檢查結果
     if (url.pathname.startsWith("/result")) {
       const jobId = url.searchParams.get("id");
       const job = db.get(jobId);
