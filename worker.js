@@ -13,7 +13,7 @@ export default {
       db.set(jobId, { status: "processing", gif: null });
 
       // 觸發 GitHub Actions
-      await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/gif.yml/dispatches", {
+      await fetch("https://api.github.com/repos/karsontsang23/vtg/actions/workflows/gif.yml/dispatches", {
         method: "POST",
         headers: {
           // 💡 受影響代碼修改：改為從 env.GITHUB_TOKEN 讀取環境變數
