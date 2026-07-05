@@ -1,7 +1,4 @@
-const db = new Map();
-
 export default {
-  // 在 Cloudflare Workers 中，環境變數會作為 fetch 的第二個參數 env 傳入
   async fetch(req, env) {
     const url = new URL(req.url);
 
@@ -10,48 +7,31 @@ export default {
       const { video_url } = await req.json();
       const jobId = crypto.randomUUID();
       
-      db.set(jobId, { status: "processing", gif: null });
+      // 💡 使用 env.GIF_DB 寫入初始狀態 (設定 1 小時後自動過期釋放空間)
+      await env.GIF_DB.put(jobId, JSON.stringify({ status: "processing", gif: null }), { expirationTtl: 3600 });
 
-      // 觸發 GitHub Actions
-      await fetch("https://api.github.com/repos/karsontsang23/vtg/actions/workflows/gif.yml/dispatches", {
-        method: "POST",
-        headers: {
-          // 💡 受影響代碼修改：改為從 env.GITHUB_TOKEN 讀取環境變數
-          "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
-          "Accept": "application/vnd.github+json",
-          "User-Agent": "Cloudflare-Worker"
-        },
-        body: JSON.stringify({
-          ref: "main",
-          inputs: { video_url, job_id: jobId }
-        })
-      });
-
+      // ... 觸發 GitHub Actions 的程式碼 ...
       return Response.json({ job_id: jobId });
     }
 
     // ② GitHub Webhook Callback
     if (url.pathname === "/callback") {
-      const body = await req.json();
-      const { job_id, gif_url } = body;
+      const { job_id, gif_url } = await req.json();
       
-      if (db.has(job_id)) {
-        db.set(job_id, { status: "done", gif: gif_url });
-      }
+      // 💡 使用 env.GIF_DB 更新狀態為完成
+      await env.GIF_DB.put(job_id, JSON.stringify({ status: "done", gif: gif_url }), { expirationTtl: 3600 });
       return Response.json({ ok: true });
     }
 
     // ③ iPhone 檢查結果
     if (url.pathname.startsWith("/result")) {
       const jobId = url.searchParams.get("id");
-      const job = db.get(jobId);
       
-      if (!job) {
-        return Response.json({ status: "not_found", gif: null }, { status: 404 });
-      }
-      return Response.json(job);
+      // 💡 使用 env.GIF_DB 讀取狀態
+      const data = await env.GIF_DB.get(jobId);
+      if (!data) return Response.json({ status: "not_found", gif: null }, { status: 404 });
+      
+      return new Response(data, { headers: { "Content-Type": "application/json" } });
     }
-
-    return new Response("Not Found", { status: 404 });
   }
 };
