@@ -1,16 +1,32 @@
-# ... 前面步驟保持不變 ...
+name: GIF Convert V4
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        required: true
+      job_id:
+        required: true
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg[span_5](start_span)[span_5](end_span)
+
+      - name: Download Video
+        run: curl -L "${{ inputs.video_url }}" -o input.mp4[span_6](start_span)[span_6](end_span)
+
       - name: Convert to GIF
         run: |
           ffmpeg -i input.mp4 -vf "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" output.gif
 
-      # 保持使用 GitHub 官方 Artifact 儲存成品[span_1](start_span)[span_1](end_span)
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.job_id }}
-          path: output.gif
+          path: output.gif[span_7](start_span)[span_7](end_span)
 
-      # 💡 受影響代碼修改：直接將免驗證的 nightly.link 下載網址傳回 Worker[span_2](start_span)[span_2](end_span)
       - name: Notify Cloudflare Worker (Webhook)
         run: |
           curl -X POST https://YOUR_WORKER.workers.dev/callback \
