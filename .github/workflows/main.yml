@@ -1,36 +1,21 @@
-name: GIF Convert V4
-
-on:
-  workflow_dispatch:
-    inputs:
-      video_url:
-        required: true
-      job_id:
-        required: true
-
-jobs:
-  convert:
-    runs-on: ubuntu-latest
-
-    steps:
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - run: curl -L "${{ inputs.video_url }}" -o input.mp4
-
-      - run: |
-          ffmpeg -i input.mp4 \
-          -vf "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
-          output.gif
-
-      - name: Upload GIF somewhere public
+# ... 前面步驟保持不變 ...
+      - name: Convert to GIF
         run: |
-          echo "UPLOAD STEP HERE (R2 / GitHub release / cloud storage)"
+          ffmpeg -i input.mp4 -vf "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" output.gif
 
-      - name: Notify Cloudflare Worker (webhook)
+      # 保持使用 GitHub 官方 Artifact 儲存成品[span_1](start_span)[span_1](end_span)
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.job_id }}
+          path: output.gif
+
+      # 💡 受影響代碼修改：直接將免驗證的 nightly.link 下載網址傳回 Worker[span_2](start_span)[span_2](end_span)
+      - name: Notify Cloudflare Worker (Webhook)
         run: |
-          curl -X POST https://https://vtg-3fj.pages.dev/callback \
-          -H "Content-Type: application/json" \
-          -d '{
-            "job_id": "${{ inputs.job_id }}",
-            "gif_url": "https://YOUR_PUBLIC_URL/output.gif"
-          }'
+          curl -X POST https://YOUR_WORKER.workers.dev/callback \
+            -H "Content-Type: application/json" \
+            -d '{
+              "job_id": "${{ inputs.job_id }}",
+              "gif_url": "https://nightly.link/${{ github.repository }}/actions/artifacts/${{ github.run_id }}.zip"
+            }'
