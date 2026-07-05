@@ -12,10 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg[span_5](start_span)[span_5](end_span)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Download Video
-        run: curl -L "${{ inputs.video_url }}" -o input.mp4[span_6](start_span)[span_6](end_span)
+      - name: Download Video from Worker KV
+        run: |
+          curl -L "https://YOUR_WORKER.workers.dev/get-video?id=${{ inputs.job_id }}" -o input.mp4
 
       - name: Convert to GIF
         run: |
@@ -25,7 +26,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.job_id }}
-          path: output.gif[span_7](start_span)[span_7](end_span)
+          path: output.gif
 
       - name: Notify Cloudflare Worker (Webhook)
         run: |
