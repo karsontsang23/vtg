@@ -4,14 +4,16 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
 
-    // ① iPhone 建立 Job (保持不變)
+    // ① iPhone 建立 Job
     if (req.method === "POST") {
       const { video_url } = await req.json();
-      const jobId = crypto.randomUUID(); //[span_2](start_span)[span_2](end_span)
+      const jobId = crypto.randomUUID(); //[span_1](start_span)[span_1](end_span)
       
+      // 寫入 KV 儲存狀態 (設定 1 小時自動過期)
       await env.GIF_DB.put(jobId, JSON.stringify({ status: "processing", gif: null }), { expirationTtl: 3600 });
 
-      await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/gif.yml/dispatches", {
+      // 觸發 GitHub Actions (已指向 main.yml)
+      await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/main.yml/dispatches", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
@@ -24,18 +26,18 @@ export default {
         })
       });
 
-      return Response.json({ job_id: jobId }); //[span_3](start_span)[span_3](end_span)
+      return Response.json({ job_id: jobId }); //[span_2](start_span)[span_2](end_span)
     }
 
-    // ② GitHub Webhook Callback (保持不變)
+    // ② GitHub Webhook Callback
     if (url.pathname === "/callback") {
       const { job_id, gif_url } = await req.json();
       await env.GIF_DB.put(job_id, JSON.stringify({ status: "done", gif: gif_url }), { expirationTtl: 3600 });
-      return Response.json({ ok: true }); //[span_4](start_span)[span_4](end_span)
+      return Response.json({ ok: true }); //[span_3](start_span)[span_3](end_span)
     }
 
-    // ③ iPhone 檢查結果 (💡 受影響代碼修改：在雲端完成解壓並直接回傳 GIF)
-    if (url.pathname.startsWith("/result")) { //[span_5](start_span)[span_5](end_span)
+    // ③ iPhone 檢查結果並自動解壓
+    if (url.pathname.startsWith("/result")) { //[span_4](start_span)[span_4](end_span)
       const jobId = url.searchParams.get("id");
       const data = await env.GIF_DB.get(jobId);
       
@@ -47,23 +49,18 @@ export default {
       }
 
       try {
-        // 1. 下載由 nightly.link 提供的公開 ZIP 檔
+        // 1. 抓取 nightly.link 產出的公開 ZIP
         const zipRes = await fetch(job.gif);
         const zipBuffer = await zipRes.arrayBuffer();
         
-        // 2. 解壓 ZIP 檔案內容
+        // 2. 解壓 ZIP
         const unzipped = unzipSync(new Uint8Array(zipBuffer));
-        
-        // 3. 找出入面的 GIF 檔案
         const gifFileName = Object.keys(unzipped).find(name => name.endsWith('.gif'));
-        if (!gifFileName) {
-          return new Response("GIF not found in ZIP", { status: 404 });
-        }
         
-        const gifBytes = unzipped[gifFileName];
-
-        // 4. 直接傳送純 GIF 檔案給 iPhone
-        return new Response(gifBytes, {
+        if (!gifFileName) return new Response("GIF not found in ZIP", { status: 404 });
+        
+        // 3. 直接以 image/gif 格式串流回傳給 iPhone
+        return new Response(unzipped[gifFileName], {
           headers: {
             "Content-Type": "image/gif",
             "Content-Disposition": `inline; filename="${jobId}.gif"`
