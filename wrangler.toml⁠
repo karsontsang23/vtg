@@ -1,0 +1,8 @@
+name = "gif-ffmpeg-worker"
+main = "worker.js"
+compatibility_date = "2026-07-05"
+
+[[kv_namespaces]]
+binding = "GIF_DB"
+id = "c291b9a3cb1e42b9831ff46033ab21c3"
+
