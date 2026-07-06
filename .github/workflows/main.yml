@@ -1,38 +1,24 @@
-name: GIF Convert V4
+name: Video to GIF Converter
+
 on:
-  workflow_dispatch:
-    inputs:
-      video_url:
-        required: true
-      job_id:
-        required: true
+  repository_dispatch:
+    types: [main]
 
 jobs:
   convert:
     runs-on: ubuntu-latest
     steps:
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Download Video from Worker KV
+      # 1. 從 Worker 下載暫存的影片
+      - name: Download Video from Worker
         run: |
-          curl -L "https://vtg.karsontsang23.workers.dev/get-video?id=${{ inputs.job_id }}" -o input.mp4
+          curl -s -o input.mp4 "https://vtg.karsontsang23.workers.dev/get-video?id=${{ github.event.client_payload.job_id }}"
 
-      - name: Convert to GIF
+      # 2. 執行 ffmpeg 轉檔（純系統命令，不佔用 Node.js）
+      - name: Convert MP4 to GIF
         run: |
-          ffmpeg -i input.mp4 -vf "fps=15,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" output.gif
+          ffmpeg -i input.mp4 -vf "fps=12,scale=480:-1:flags=lanczos" -c:v gif output.gif
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.job_id }}
-          path: output.gif
-
-      - name: Notify Cloudflare Worker (Webhook)
+      # 3. 將轉好的 GIF 直接 POST 傳回 Worker 儲存
+      - name: Send GIF back to Worker
         run: |
-          curl -X POST https://vtg.karsontsang23.workers.dev/callback \
-            -H "Content-Type: application/json" \
-            -d '{
-              "job_id": "${{ inputs.job_id }}",
-              "gif_url": "https://nightly.link/${{ github.repository }}/actions/artifacts/${{ github.run_id }}.zip"
-            }'
+          curl -X POST --data-binary @output.gif "https://vtg.karsontsang23.workers.dev/callback?id=${{ github.event.client_payload.job_id }}"
