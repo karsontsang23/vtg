@@ -4,43 +4,59 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
 
-    // ① iPhone 發出 POST：上傳影片，起動任務，並「即時」回傳 job_id 避免超時
+    // ① iPhone 發出 POST：上傳影片並啟動任務
     if (req.method === "POST" && url.pathname === "/") {
-      const jobId = crypto.randomUUID();
-      
-      const videoBuffer = await req.arrayBuffer();
-      if (videoBuffer.byteLength === 0) {
-        return new Response("No video file received", { status: 400 });
+      try {
+        const jobId = crypto.randomUUID();
+        
+        // 讀取影片二進位數據
+        const videoBuffer = await req.arrayBuffer();
+        if (videoBuffer.byteLength === 0) {
+          return Response.json({ error: "上傳失敗：影片檔案為空，請檢查捷徑輸入" }, { status: 400 });
+        }
+
+        // 檢查 KV 綁定狀態
+        if (!env.GIF_DB) {
+          return Response.json({ error: "設定錯誤：未在 Cloudflare 綁定名為 GIF_DB 的 KV 空間" }, { status: 500 });
+        }
+
+        // 暫存影片到 KV
+        await env.GIF_DB.put(`video_${jobId}`, videoBuffer, { expirationTtl: 3600 });
+        
+        // 寫入任務狀態
+        await env.GIF_DB.put(jobId, JSON.stringify({ status: "processing", gif: null }), { expirationTtl: 3600 });
+
+        // 檢查 Token 狀態
+        if (!env.GITHUB_TOKEN) {
+          return Response.json({ error: "設定錯誤：未在 Worker 設定 GITHUB_TOKEN 環境變數" }, { status: 500 });
+        }
+
+        // 觸發 GitHub Actions（請記得將 YOUR_USER 改為你的 GitHub 帳號）
+        const ghRes = await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/main.yml/dispatches", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "Cloudflare-Worker"
+          },
+          body: JSON.stringify({
+            ref: "main",
+            inputs: { video_url: "KV_STORED", job_id: jobId }
+          })
+        });
+
+        if (!ghRes.ok) {
+          const errText = await ghRes.text();
+          return Response.json({ error: "GitHub API 拒絕連線", details: errText }, { status: 500 });
+        }
+
+        // 成功則回傳正確的 JSON 辭典
+        return Response.json({ job_id: jobId });
+
+      } catch (err) {
+        // 捕捉任何未知的程式碼錯誤並以 JSON 回傳
+        return Response.json({ error: "Worker 執行出錯", details: err.message }, { status: 500 });
       }
-
-      // 暫存影片到 KV
-      await env.GIF_DB.put(`video_${jobId}`, videoBuffer, { expirationTtl: 3600 });
-      
-      // 寫入初始狀態
-      await env.GIF_DB.put(jobId, JSON.stringify({ status: "processing", gif: null }), { expirationTtl: 3600 });
-
-      // 觸發 GitHub Actions
-      const ghRes = await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/main.yml/dispatches", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
-          "Accept": "application/vnd.github+json",
-          "User-Agent": "Cloudflare-Worker"
-        },
-        body: JSON.stringify({
-          ref: "main",
-          inputs: { video_url: "KV_STORED", job_id: jobId }
-        })
-      });
-
-      if (!ghRes.ok) {
-        return new Response("Failed to trigger GitHub Action", { status: 500 });
-      }
-
-      // 💡 唔好喺度等，直接將 ID 傳返畀 iPhone
-      return new Response(JSON.stringify({ job_id: jobId }), {
-        headers: { "Content-Type": "application/json" }
-      });
     }
 
     // 供 GitHub Actions 下載影片
@@ -59,29 +75,20 @@ export default {
     if (url.pathname === "/callback") {
       const { job_id, gif_url } = await req.json();
       await env.GIF_DB.put(job_id, JSON.stringify({ status: "done", gif: gif_url }), { expirationTtl: 3600 });
-      return new Response(JSON.stringify({ ok: true }), {
-        headers: { "Content-Type": "application/json" }
-      });
+      return Response.json({ ok: true });
     }
 
-    // ③ iPhone 拿着 job_id 來這裡檢查並下載 GIF
+    // ③ iPhone 檢查結果並下載 GIF
     if (url.pathname.startsWith("/result")) {
       const jobId = url.searchParams.get("id");
-      if (!jobId) return new Response("Missing id", { status: 400 });
+      if (!jobId) return Response.json({ error: "缺少 id 參數" }, { status: 400 });
 
       const data = await env.GIF_DB.get(jobId);
-      if (!data) return new Response(JSON.stringify({ status: "not_found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" }
-      });
+      if (!data) return Response.json({ status: "not_found" }, { status: 404 });
       
       const job = JSON.parse(data);
-      
-      // 如果未轉完，回傳狀態讓 iPhone 繼續等
       if (job.status !== "done") {
-        return new Response(JSON.stringify({ status: job.status }), {
-          headers: { "Content-Type": "application/json" }
-        });
+        return Response.json({ status: job.status });
       }
 
       try {
@@ -92,7 +99,6 @@ export default {
         
         if (!gifFileName) return new Response("GIF not found in ZIP", { status: 404 });
         
-        // 成功後清理 KV 影片
         await env.GIF_DB.delete(`video_${jobId}`);
 
         return new Response(unzipped[gifFileName], {
