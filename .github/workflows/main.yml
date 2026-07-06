@@ -16,7 +16,7 @@ jobs:
 
       - name: Download Video from Worker KV
         run: |
-          curl -L "https://YOUR_WORKER.workers.dev/get-video?id=${{ inputs.job_id }}" -o input.mp4
+          curl -L "https://vtg.karsontsang23.workers.dev/get-video?id=${{ inputs.job_id }}" -o input.mp4
 
       - name: Convert to GIF
         run: |
@@ -30,7 +30,7 @@ jobs:
 
       - name: Notify Cloudflare Worker (Webhook)
         run: |
-          curl -X POST https://YOUR_WORKER.workers.dev/callback \
+          curl -X POST https://vtg.karsontsang23.workers.dev/callback \
             -H "Content-Type: application/json" \
             -d '{
               "job_id": "${{ inputs.job_id }}",
