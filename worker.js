@@ -1,8 +1,15 @@
 import { unzipSync } from 'fflate';
 
+// 💡 建立一個最安全、不依賴新語法的 JSON 回傳工具
+function sendJson(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status: status,
+    headers: { "Content-Type": "application/json; charset=utf-8" }
+  });
+}
+
 export default {
   async fetch(req, env) {
-    // 💡 加上全域防護圈，確保 fetch 內任何錯誤都一定會輸出 JSON
     try {
       const url = new URL(req.url);
 
@@ -10,29 +17,22 @@ export default {
       if (req.method === "POST" && url.pathname === "/") {
         const jobId = crypto.randomUUID();
         
-        // 讀取影片二進位數據
         const videoBuffer = await req.arrayBuffer();
         if (videoBuffer.byteLength === 0) {
-          return Response.json({ error: "上傳失敗：影片檔案為空，請檢查捷徑輸入" }, { status: 400 });
+          return sendJson({ error: "上傳失敗：影片檔案為空，請檢查捷徑輸入" }, 400);
         }
 
-        // 檢查 KV 綁定狀態
         if (!env.GIF_DB) {
-          return Response.json({ error: "設定錯誤：未在 Cloudflare 綁定名為 GIF_DB 的 KV 空間" }, { status: 500 });
+          return sendJson({ error: "設定錯誤：未在 Cloudflare 綁定名為 GIF_DB 的 KV 空間" }, 500);
         }
 
-        // 暫存影片到 KV
         await env.GIF_DB.put(`video_${jobId}`, videoBuffer, { expirationTtl: 3600 });
-        
-        // 寫入任務狀態
         await env.GIF_DB.put(jobId, JSON.stringify({ status: "processing", gif: null }), { expirationTtl: 3600 });
 
-        // 檢查 Token 狀態
         if (!env.GITHUB_TOKEN) {
-          return Response.json({ error: "設定錯誤：未在 Worker 設定 GITHUB_TOKEN 環境變數" }, { status: 500 });
+          return sendJson({ error: "設定錯誤：未在 Worker 設定 GITHUB_TOKEN 環境變數" }, 500);
         }
 
-        // 觸發 GitHub Actions（請記得將 YOUR_USER 改為你的 GitHub 帳號）
         const ghRes = await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/main.yml/dispatches", {
           method: "POST",
           headers: {
@@ -48,11 +48,10 @@ export default {
 
         if (!ghRes.ok) {
           const errText = await ghRes.text();
-          return Response.json({ error: "GitHub API 拒絕連線", details: errText }, { status: 500 });
+          return sendJson({ error: "GitHub API 拒絕連線", details: errText }, 500);
         }
 
-        // 成功回傳 JSON 辭典
-        return Response.json({ job_id: jobId });
+        return sendJson({ job_id: jobId });
       }
 
       // 供 GitHub Actions 下載影片
@@ -60,7 +59,7 @@ export default {
         const jobId = url.searchParams.get("id");
         const videoData = await env.GIF_DB.get(`video_${jobId}`, { type: "arrayBuffer" });
         
-        if (!videoData) return Response.json({ error: "Video not found" }, { status: 404 });
+        if (!videoData) return sendJson({ error: "Video not found" }, 404);
         
         return new Response(videoData, {
           headers: { "Content-Type": "video/mp4" }
@@ -71,20 +70,20 @@ export default {
       if (url.pathname === "/callback") {
         const { job_id, gif_url } = await req.json();
         await env.GIF_DB.put(job_id, JSON.stringify({ status: "done", gif: gif_url }), { expirationTtl: 3600 });
-        return Response.json({ ok: true });
+        return sendJson({ ok: true });
       }
 
       // ③ iPhone 檢查結果並下載 GIF
       if (url.pathname.startsWith("/result")) {
         const jobId = url.searchParams.get("id");
-        if (!jobId) return Response.json({ error: "缺少 id 參數" }, { status: 400 });
+        if (!jobId) return sendJson({ error: "缺少 id 參數" }, 400);
 
         const data = await env.GIF_DB.get(jobId);
-        if (!data) return Response.json({ status: "not_found" }, { status: 404 });
+        if (!data) return sendJson({ status: "not_found" }, 404);
         
         const job = JSON.parse(data);
         if (job.status !== "done") {
-          return Response.json({ status: job.status });
+          return sendJson({ status: job.status });
         }
 
         try {
@@ -93,7 +92,7 @@ export default {
           const unzipped = unzipSync(new Uint8Array(zipBuffer));
           const gifFileName = Object.keys(unzipped).find(name => name.endsWith('.gif'));
           
-          if (!gifFileName) return Response.json({ error: "ZIP 檔內找不到 GIF" }, { status: 404 });
+          if (!gifFileName) return sendJson({ error: "ZIP 檔內找不到 GIF" }, 404);
           
           await env.GIF_DB.delete(`video_${jobId}`);
 
@@ -104,16 +103,19 @@ export default {
             }
           });
         } catch (err) {
-          return Response.json({ error: "解壓失敗", details: err.message }, { status: 500 });
+          return sendJson({ error: "解壓失敗", details: err.message }, 500);
         }
       }
 
-      // 💡 修正點：將原本最底部的純文字 "Not Found" 盲區改成 JSON
-      return Response.json({ error: "找不到此路徑", method: req.method, path: url.pathname }, { status: 404 });
+      // 💡 瀏覽器打開時會撞到呢度，保證會輸出看得見的字
+      return sendJson({ error: "找不到此路徑", method: req.method, path: url.pathname }, 404);
 
     } catch (globalErr) {
-      // 💡 捕捉 fetch 內發生的所有未知運行錯誤
-      return Response.json({ error: "Worker 內部分支崩潰", details: globalErr.message }, { status: 500 });
+      // 萬一連上面都壞埋，用最底層的安全字串頂住
+      return new Response('{"error":"Worker崩潰","details":"' + globalErr.message + '"}', {
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      });
     }
   }
 };
