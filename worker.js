@@ -23,7 +23,7 @@ export default {
         await env.GIF_DB.put(jobId, JSON.stringify({ status: "processing" }), { expirationTtl: 3600 });
 
         // 觸發 GitHub（記得改 YOUR_USER）
-        const ghRes = await fetch("https://api.github.com/repos/YOUR_USER/gif-ffmpeg-worker/actions/workflows/main.yml/dispatches", {
+        const ghRes = await fetch("https://api.github.com/repos/karsontsang23/vtg/actions/workflows/main.yml/dispatches", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${env.GITHUB_TOKEN}`,
