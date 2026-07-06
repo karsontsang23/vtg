@@ -13,12 +13,18 @@ jobs:
         run: |
           curl -s -o input.mp4 "https://vtg.karsontsang23.workers.dev/get-video?id=${{ github.event.client_payload.job_id }}"
 
-      # 2. 執行 ffmpeg 轉檔（純系統命令，不佔用 Node.js）
+      # 2. 執行 ffmpeg 轉檔（使用你最新的 240p 雙步驟 Bayer 混色命令）
       - name: Convert MP4 to GIF
         run: |
-          ffmpeg -i input.mp4 -vf "fps=12,scale=480:-1:flags=lanczos" -c:v gif output.gif
+          ffmpeg -i input.mp4 -r 12 -vf "scale=-2:240:flags=lanczos,palettegen" -y palette.png && ffmpeg -i input.mp4 -i palette.png -y -filter_complex "[0:v] fps=12,scale=-2:240:flags=lanczos [x];[x] [1:v] paletteuse=stats_mode=diff:dither=bayer:bayer_scale=3" output.gif
 
-      # 3. 將轉好的 GIF 直接 POST 傳回 Worker 儲存
+      # 3. 安裝並使用 Gifsicle 作最後輕量雙重保險壓縮
+      - name: Compress GIF Size
+        run: |
+          sudo apt-get update && sudo apt-get install -y gifsicle
+          gifsicle -O3 output.gif -o output.gif
+
+      # 4. 將轉好且體積超輕量的 GIF 傳回 Worker
       - name: Send GIF back to Worker
         run: |
           curl -X POST --data-binary @output.gif "https://vtg.karsontsang23.workers.dev/callback?id=${{ github.event.client_payload.job_id }}"
